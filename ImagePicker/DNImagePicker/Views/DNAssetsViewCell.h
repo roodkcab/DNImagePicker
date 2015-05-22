@@ -20,6 +20,7 @@
 
 @interface DNAssetsViewCell : UICollectionViewCell
 
+@property (nonatomic, strong) UIImageView *imageView;
 @property (nonatomic, strong) ALAsset *asset;
 @property (nonatomic, assign) BOOL isSelected;
 @property (nonatomic, weak) id<DNAssetsViewCellDelegate> delegate;

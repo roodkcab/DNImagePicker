@@ -9,8 +9,11 @@
 #import "DNAssetsViewCell.h"
 
 
+#pragma mark - DNAssetsViewCell
+
+static NSMutableDictionary *cache;
+
 @interface DNAssetsViewCell ()
-@property (nonatomic, strong) UIImageView *imageView;
 @property (nonatomic, strong) UIButton *checkButton;
 @property (nonatomic, strong) UIImageView *checkImageView;
 
@@ -121,7 +124,6 @@
     [self addConstraints:checkImageConstraintsV];
 }
 
-
 - (void)fillWithAsset:(ALAsset *)asset isSelected:(BOOL)seleted
 {
     self.isSelected = seleted;
@@ -132,6 +134,7 @@
     } else {
         self.imageView.image = [UIImage imageNamed:@"assets_placeholder_picture"];
     }
+    
 }
 
 - (void)setIsSelected:(BOOL)isSelected

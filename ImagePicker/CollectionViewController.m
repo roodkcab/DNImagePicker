@@ -6,13 +6,19 @@
 //  Copyright (c) 2015年 Dennis. All rights reserved.
 //
 
-#import "CollectionViewController.h"
 #import "CollectionViewCell.h"
-#import <AssetsLibrary/AssetsLibrary.h>
+#import "CollectionViewController.h"
 #import "DNAsset.h"
 #import "NSURL+DNIMagePickerUrlEqual.h"
+#import <AssetsLibrary/AssetsLibrary.h>
+
+
+#pragma mark - CollectionViewController
+
+
 
 @interface CollectionViewController ()
+
 @end
 
 @implementation CollectionViewController
@@ -31,6 +37,7 @@ static NSString * const reuseIdentifier = @"Cell";
 }
 
 #pragma mark <UICollectionViewDataSource>
+
 - (NSInteger)numberOfSectionsInCollectionView:(UICollectionView *)collectionView
 {
     return 1;
@@ -51,21 +58,20 @@ static NSString * const reuseIdentifier = @"Cell";
     [lib assetForURL:dnasset.url resultBlock:^(ALAsset *asset){
         if (asset) {
             [weakSelf setCell:blockCell asset:asset];
-        }else
-        {
+        } else {
             // On iOS 8.1 [library assetForUrl] Photo Streams always returns nil. Try to obtain it in an alternative way
             [lib enumerateGroupsWithTypes:ALAssetsGroupPhotoStream
-                                   usingBlock:^(ALAssetsGroup *group, BOOL *stop)
+                               usingBlock:^(ALAssetsGroup *group, BOOL *stop)
              {
                  [group enumerateAssetsWithOptions:NSEnumerationReverse
                                         usingBlock:^(ALAsset *result, NSUInteger index, BOOL *stop) {
-                     
-                     if([[result valueForProperty:ALAssetPropertyAssetURL] isEqual:dnasset.url])
-                     {
-                         [weakSelf setCell:blockCell asset:result];
-                         *stop = YES;
-                     }
-                 }];
+                                            
+                                            if([[result valueForProperty:ALAssetPropertyAssetURL] isEqual:dnasset.url])
+                                            {
+                                                [weakSelf setCell:blockCell asset:result];
+                                                *stop = YES;
+                                            }
+                                        }];
              }
                              failureBlock:^(NSError *error)
              {
@@ -81,6 +87,7 @@ static NSString * const reuseIdentifier = @"Cell";
     return cell;
 }
 
+
 - (void)setCell:(CollectionViewCell *)cell asset:(ALAsset *)asset
 {
     
@@ -90,7 +97,7 @@ static NSString * const reuseIdentifier = @"Cell";
         return;
     }
     cell.textLabel.hidden = NO;
-    UIImage *image;
+    __block UIImage *image;
     NSString *string;
     if (self.isFullImage) {
         NSNumber *orientationValue = [asset valueForProperty:ALAssetPropertyOrientation];
@@ -100,12 +107,12 @@ static NSString * const reuseIdentifier = @"Cell";
         }
         
         image = [UIImage imageWithCGImage:asset.thumbnail];
+        
 //        image = [UIImage imageWithCGImage:asset.thumbnail scale:0.1 orientation:orientation];
         
         string = [NSString stringWithFormat:@"fileSize:%lld k\nwidth:%.0f\nheiht:%.0f",asset.defaultRepresentation.size/1000,[[asset defaultRepresentation] dimensions].width, [[asset defaultRepresentation] dimensions].height];
         
-    }else
-    {
+    } else {
         image = [UIImage imageWithCGImage:asset.defaultRepresentation.fullScreenImage];
         
         string = [NSString stringWithFormat:@"fileSize:%lld k\nwidth:%.0f\nheiht:%.0f",asset.defaultRepresentation.size/1000,image.size.width,image.size.height];

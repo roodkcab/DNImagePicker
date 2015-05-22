@@ -17,7 +17,30 @@
 #import "DNAsset.h"
 #import "NSURL+DNIMagePickerUrlEqual.h"
 
+#import <ImageIO/ImageIO.h>
+#import <AssetsLibrary/AssetsLibrary.h>
 
+#pragma mark - ALAsset (assetType)
+
+@interface ALAsset (assetType)
+
+@end
+
+@implementation ALAsset (assetType)
+
+- (BOOL)isPhoto
+{
+    return [[self valueForProperty:ALAssetPropertyType] isEqual:ALAssetTypePhoto];
+}
+
+- (BOOL)isVideo
+{
+    return [[self valueForProperty:ALAssetPropertyType] isEqual:ALAssetTypeVideo];
+}
+
+@end
+
+static NSMutableDictionary *cache;
 static NSUInteger const kDNImageFlowMaxSeletedNumber = 9;
 
 @interface DNImageFlowViewController () <UICollectionViewDataSource, UICollectionViewDelegate, DNAssetsViewCellDelegate, DNPhotoBrowserDelegate>
@@ -330,12 +353,108 @@ static NSString* const dnAssetsViewCellReuseIdentifier = @"DNAssetsViewCell";
     return self.assetsArray.count;
 }
 
+
+
+// Helper methods for thumbnailForAsset:maxPixelSize:
+static size_t getAssetBytesCallback(void *info, void *buffer, off_t position, size_t count) {
+    ALAssetRepresentation *rep = (__bridge id)info;
+    
+    NSError *error = nil;
+    size_t countRead = [rep getBytes:(uint8_t *)buffer fromOffset:position length:count error:&error];
+    
+    if (countRead == 0 && error) {
+        // We have no way of passing this info back to the caller, so we log it, at least.
+        NSLog(@"thumbnailForAsset:maxPixelSize: got an error reading an asset: %@", error);
+    }
+    
+    return countRead;
+}
+
+static void releaseAssetCallback(void *info) {
+    // The info here is an ALAssetRepresentation which we CFRetain in thumbnailForAsset:maxPixelSize:.
+    // This release balances that retain.
+    CFRelease(info);
+}
+
+// Returns a UIImage for the given asset, with size length at most the passed size.
+// The resulting UIImage will be already rotated to UIImageOrientationUp, so its CGImageRef
+// can be used directly without additional rotation handling.
+// This is done synchronously, so you should call this method on a background queue/thread.
+- (UIImage *)thumbnailForAsset:(ALAsset *)asset maxPixelSize:(NSUInteger)size inSize:(CGSize)rectSize
+{
+    NSParameterAssert(asset != nil);
+    NSParameterAssert(size > 0);
+    
+    ALAssetRepresentation *rep = [asset defaultRepresentation];
+    
+    CGDataProviderDirectCallbacks callbacks = {
+        .version = 0,
+        .getBytePointer = NULL,
+        .releaseBytePointer = NULL,
+        .getBytesAtPosition = getAssetBytesCallback,
+        .releaseInfo = releaseAssetCallback,
+    };
+    
+    CGDataProviderRef provider = CGDataProviderCreateDirect((void *)CFBridgingRetain(rep), rep.size, &callbacks);
+    CGImageSourceRef source = CGImageSourceCreateWithDataProvider(provider, NULL);
+    CGImageRef imageRef = CGImageSourceCreateImageAtIndex(source, 0, NULL);
+    CFRelease(source);
+    
+    CGFloat width = rep.dimensions.width;
+    CGFloat height = rep.dimensions.height;
+    CGImageRef croppedImage = NULL;
+    if (width > height) {
+        croppedImage = CGImageCreateWithImageInRect(imageRef, CGRectMake(width/2-height/2, 0, height, height));
+    } else {
+        croppedImage = CGImageCreateWithImageInRect(imageRef, CGRectMake(0, height/2-width/2, width, width));
+    }
+    
+    CFRelease(imageRef);
+    CFRelease(provider);
+    
+    if (!croppedImage) {
+        return nil;
+    }
+    
+    UIImage *toReturn = [UIImage imageWithCGImage:croppedImage scale:0 orientation:UIImageOrientationUp];
+    CFRelease(croppedImage);
+    
+    UIGraphicsBeginImageContextWithOptions(rectSize, NO, 0.0);
+    [toReturn drawInRect:CGRectMake(0, 0, rectSize.width, rectSize.height)];
+    UIImage *newImage = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    
+    return newImage;
+}
+
+
 - (UICollectionViewCell *)collectionView:(UICollectionView *)collectionView cellForItemAtIndexPath:(NSIndexPath *)indexPath
 {
     DNAssetsViewCell *cell = [collectionView dequeueReusableCellWithReuseIdentifier:dnAssetsViewCellReuseIdentifier forIndexPath:indexPath];
     ALAsset *asset = self.assetsArray[indexPath.row];
     cell.delegate = self;
     [cell fillWithAsset:asset isSelected:[self assetIsSelected:asset]];
+    NSString *fileName = asset.defaultRepresentation.filename;
+    if ([asset isPhoto]) {
+        if (!cache) {
+            cache = [@{} mutableCopy];
+        }
+        if (cache[fileName]) {
+            cell.imageView.image = cache[fileName];
+        } else {
+            CGFloat width = asset.defaultRepresentation.dimensions.width;
+            CGFloat height = asset.defaultRepresentation.dimensions.height;
+            if ((width > [UIScreen mainScreen].bounds.size.width * [UIScreen mainScreen].scale * 4) || (height > [UIScreen mainScreen].bounds.size.height * [UIScreen mainScreen].scale * 4)) {
+                dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
+                    UIImage *thumbnail = [self thumbnailForAsset:asset maxPixelSize:1024 inSize:cell.frame.size];
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        cell.imageView.image = thumbnail;
+                        cache[fileName] = thumbnail;
+                    });
+                });
+            }
+        }
+    }
     return cell;
 }
 
